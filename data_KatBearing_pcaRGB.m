@@ -15,7 +15,7 @@ addpath(genpath(pwd)); % Add all files to working path
 %--------------------------------------------------------------------------
 Samples = 2; 
 ImageL = 64; ImageW = ImageL; ImageSize = ImageL * ImageW;
-DataPoints = ImageSize; % points from signals
+dataPoints = ImageSize; % points from signals
 signal_cut_1 = zeros(Samples,ImageSize);
 signal_cut_2 = zeros(Samples,ImageSize);
 signal_cut_3 = zeros(Samples,ImageSize);
@@ -23,7 +23,7 @@ OPERATING = ["N15_M07_F10","N09_M07_F10","N15_M01_F10","N15_M07_F04"];
 FILES = ["Healthy", "Outer", "Inner"];  % healthy, outer ring fault, inner ring fault
 output_dir = strcat("toImgs/Kat_",num2str(ImageL),"_pcaRGB/");
 %data_dir = "dataset/KAT/";
-%data_dir = ""; % custom dataset
+data_dir = ""; % custom dataset
 
 %% Main
 tic
@@ -49,49 +49,63 @@ for iOperate = 1:numel(OPERATING)
             %----------------------------------------------------------------------
             mat_name = strcat(operate_name,"_",fault_name,"_1"); % only select 1 trails for test
             mat_path = strcat(data_dir,fault_name,'/',mat_name,'.mat');
-            load(mat_path)
+
+            load(mat_path);
             mat_variable = eval(mat_name);
-            signal_force = (mat_variable.Y(1).Data)';
-            signal_current_1 = (mat_variable.Y(2).Data)'; 
-            signal_current_2 = (mat_variable.Y(3).Data)';
-            signal_speed = (mat_variable.Y(4).Data)';
-            signal_torque = (mat_variable.Y(6).Data)';
-            signal_vibration_1 = (mat_variable.Y(7).Data)'; 
-            data_raw = [signal_current_1 signal_current_2 signal_vibration_1];
-            data_pca = pca_noexplained(data_raw, 3);
-            data = normalize255(data_pca);
+            length4Khz = 16000;
+            length64Khz = length4Khz*16;
+            signal_force_raw = (mat_variable.Y(1).Data)';
+            signal_current_1_raw = (mat_variable.Y(2).Data)'; 
+            signal_current_2_raw = (mat_variable.Y(3).Data)';
+            signal_speed_raw = (mat_variable.Y(4).Data)';
+            signal_torque_raw = (mat_variable.Y(6).Data)';
+            signal_vibration_raw = (mat_variable.Y(7).Data)';
+            
+            signal_force = signal_force_raw;
+            signal_current_1 = signal_current_1_raw(1:length64Khz,:);
+            signal_current_2 = signal_current_2_raw(1:length64Khz,:);
+            signal_speed = signal_speed_raw(1:length4Khz,:);
+            signal_torque = signal_torque_raw;
+            signal_vibration = signal_vibration_raw(1:length64Khz,:);
+            
+            signal_force_re = resample(signal_force,64000,4000);
+            signal_force_re = signal_force_re(1:length64Khz,:);
+            signal_torque_re = resample(signal_torque,64000,4000);
+            signal_torque_re = signal_torque_re(1:length64Khz,:);
+            dataRaw = [signal_current_1 signal_current_2 signal_vibration signal_force_re signal_torque_re];
+
+            data = pca_noexplained(dataRaw, 3);
             
             %----------------------------------------------------------------------
             %  Random Sampling, Cut and normalize signal
             %----------------------------------------------------------------------
             if save_flag==true
-                randomSerial = round(unifrnd (0, 1, 1, Samples)*((length(data_pca)-DataPoints)));
+                randomSerial = round(unifrnd (0, 1, 1, Samples)*((length(data)-dataPoints)));
                 for iCut=1:Samples
                     cutIndex = randomSerial(iCut);
-                    signal_cut_1(iCut,:) = data((cutIndex+1):(cutIndex+DataPoints),1);
-                    signal_cut_2(iCut,:) = data((cutIndex+1):(cutIndex+DataPoints),2);
-                    signal_cut_3(iCut,:) = data((cutIndex+1):(cutIndex+DataPoints),3);
+                    signalCut1(iCut,:) = normalize255(data((cutIndex+1):(cutIndex+dataPoints),1));
+                    signalCut2(iCut,:) = normalize255(data((cutIndex+1):(cutIndex+dataPoints),2));
+                    signalCut3(iCut,:) = normalize255(data((cutIndex+1):(cutIndex+dataPoints),3));
                 end
                 %----------------------------------------------------------------------
                 %  Convert signal to images
                 %----------------------------------------------------------------------
                 for iImage=1:Samples
-                    image_1_pre = signal_cut_1(iImage,:);
-                    image_2_pre = signal_cut_2(iImage,:);
-                    image_3_pre = signal_cut_3(iImage,:);
+                    imgPre1 = signalCut1(iImage,:);
+                    imgPre2 = signalCut2(iImage,:);
+                    imgPre3 = signalCut3(iImage,:);
                     
-                    image_1_pre_reshape = reshape(image_1_pre,ImageL,ImageW);
-                    image_2_pre_reshape = reshape(image_2_pre,ImageL,ImageW);
-                    image_3_pre_reshape = reshape(image_3_pre,ImageL,ImageW);
-                    image_fusion = cat(3,image_1_pre_reshape,image_2_pre_reshape,image_3_pre_reshape);
+                    img1 = reshape(imgPre1,sqrt(dataPoints),sqrt(dataPoints));
+                    img2 = reshape(imgPre2,sqrt(dataPoints),sqrt(dataPoints));
+                    img3 = reshape(imgPre3,sqrt(dataPoints),sqrt(dataPoints));
+                    imgRGB = cat(3,img1,img2,img3);
                     
-                    %output_path_subF = strcat(output_dir,num2str(iOperate-1),'_', operate_name,'/', file_name, '/');
                     output_path_subF = strcat(output_dir, operate_name,'/', file_name, '/');
                     makedir(output_path_subF);
                     
                     
                     image_save_path = strcat(output_path_subF,fault_name,'_',num2str(iImage),'.png');
-                    imwrite(uint8(image_fusion), image_save_path);
+                    imwrite(uint8(imgRGB), image_save_path);
                 end
             end
         end
